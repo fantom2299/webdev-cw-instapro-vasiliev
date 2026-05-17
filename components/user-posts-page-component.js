@@ -1,9 +1,9 @@
 import { formatDistanceToNow } from "https://cdn.jsdelivr.net/npm/date-fns@2.29.3/esm/index.js";
 import { ru } from "https://cdn.jsdelivr.net/npm/date-fns@2.29.3/esm/locale/index.js";
-import { USER_POSTS_PAGE } from "../routes.js";
 import { renderHeaderComponent } from "./header-component.js";
-import { goToPage, user } from "../index.js";
 import { likePost, dislikePost } from "../api.js";
+import { user, goToPage } from "../index.js";
+import { POSTS_PAGE } from "../routes.js";
 
 function escapeHtml(unsafe) {
   if (!unsafe) return "";
@@ -37,16 +37,28 @@ function isPostLikedByUser(post, userId) {
   });
 }
 
-export function renderPostsPageComponent({ appEl, posts }) {
+export function renderUserPostsPageComponent({ appEl, posts, userId }) {
   const getToken = () => (user ? `Bearer ${user.token}` : undefined);
 
   const render = (currentPosts) => {
-    const userId = getUserId(user);
+    const currentUserId = getUserId(user);
+    const firstPost = currentPosts[0];
+    const postUser = firstPost?.user;
+    const escapedUserName = postUser ? escapeHtml(postUser.name || "") : "";
+
+    const userHeaderHtml = postUser
+      ? `
+        <div class="posts-user-header">
+          <img src="${postUser.imageUrl || "./assets/images/default-avatar.jpg"}" class="posts-user-header__user-image" alt="${escapedUserName}">
+          <p class="posts-user-header__user-name">${escapedUserName}</p>
+        </div>
+      `
+      : "";
 
     const postsHtml = currentPosts
       .map((post) => {
         const postId = getPostId(post);
-        const isLiked = isPostLikedByUser(post, userId);
+        const isLiked = isPostLikedByUser(post, currentUserId);
         const likeImg = isLiked
           ? "./assets/images/like-active.svg"
           : "./assets/images/like-not-active.svg";
@@ -55,14 +67,10 @@ export function renderPostsPageComponent({ appEl, posts }) {
           locale: ru,
         });
         const escapedDescription = escapeHtml(post.description || "");
-        const escapedUserName = escapeHtml(post.user?.name || "");
+        const escapedUserNamePost = escapeHtml(post.user?.name || "");
 
         return `
           <li class="post">
-            <div class="post-header" data-user-id="${post.user?.id || post.user?._id}">
-              <img src="${post.user?.imageUrl || "./assets/images/default-avatar.jpg"}" class="post-header__user-image" alt="${escapedUserName}">
-              <p class="post-header__user-name">${escapedUserName}</p>
-            </div>
             <div class="post-image-container">
               <img class="post-image" src="${post.imageUrl}" alt="${escapedDescription}">
             </div>
@@ -75,7 +83,7 @@ export function renderPostsPageComponent({ appEl, posts }) {
               </p>
             </div>
             <p class="post-text">
-              <span class="user-name">${escapedUserName}</span>
+              <span class="user-name">${escapedUserNamePost}</span>
               ${escapedDescription}
             </p>
             <p class="post-date">${timeAgo}</p>
@@ -87,8 +95,9 @@ export function renderPostsPageComponent({ appEl, posts }) {
     appEl.innerHTML = `
       <div class="page-container">
         <div class="header-container"></div>
+        ${userHeaderHtml}
         <ul class="posts">
-          ${postsHtml}
+          ${currentPosts.length === 0 ? "<p>У этого пользователя нет постов</p>" : postsHtml}
         </ul>
       </div>
     `;
@@ -97,19 +106,11 @@ export function renderPostsPageComponent({ appEl, posts }) {
       element: document.querySelector(".header-container"),
     });
 
-    // Переход на страницу юзера
-    for (let userEl of document.querySelectorAll(".post-header")) {
-      userEl.addEventListener("click", () => {
-        const userId = userEl.dataset.userId;
-        if (userId) goToPage(USER_POSTS_PAGE, { userId });
-      });
-    }
-
     // Лайки
     for (let likeBtn of document.querySelectorAll(".like-button")) {
       likeBtn.addEventListener("click", () => {
         if (!user) {
-          goToPage("auth");
+          goToPage(POSTS_PAGE);
           return;
         }
 
@@ -124,7 +125,6 @@ export function renderPostsPageComponent({ appEl, posts }) {
 
         action({ token: getToken(), postId })
           .then((data) => {
-            console.log("API ответ:", data);
             const updatedPost = data.post || data;
             const idx = currentPosts.findIndex((p) => getPostId(p) === postId);
             if (idx !== -1) {
